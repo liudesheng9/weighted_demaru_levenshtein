@@ -75,19 +75,26 @@ where
             let insertion_cost_code = distances[flat_index(i + 1, j, width)] + weight_b[j - 1];
 
             let is_match = a_elems[i - 1] == b_elems[j - 1];
+            // Substitution uses the maximum of the two position-dependent weights
+            // so it is comparable to a single deletion or insertion when weights match.
             let substitution_cost = distances[flat_index(i, j, width)]
                 + if is_match {
                     0.0
                 } else {
-                    weight_a[i - 1] + weight_b[j - 1]
+                    weight_a[i - 1].max(weight_b[j - 1])
                 };
 
             let del_between = prefix_a[i - 1] - prefix_a[k];
             let ins_between = prefix_b[j - 1] - prefix_b[db];
+            // Transposition base uses the average of the two positions' max weights.
+            // This keeps a single swap comparable to a single substitution when the
+            // same positions are involved.
             let swap_base = if k > 0 && db > 0 {
-                (weight_a[i - 1] + weight_a[k - 1] + weight_b[j - 1] + weight_b[db - 1]) / 4.0
+                let left_max = weight_a[i - 1].max(weight_b[j - 1]);
+                let right_max = weight_a[k - 1].max(weight_b[db - 1]);
+                (left_max + right_max) / 2.0
             } else {
-                (weight_a[i - 1] + weight_b[j - 1]) / 2.0
+                weight_a[i - 1].max(weight_b[j - 1])
             };
             let transposition_cost =
                 distances[flat_index(k, db, width)] + del_between + ins_between + swap_base;
@@ -171,7 +178,8 @@ mod tests {
         let wa = vec![5.0];
         let wb = vec![7.0];
         let d = generic_weighted_damerau_levenshtein(&a, &b, &wa, &wb);
-        assert!((d - 12.0).abs() < 1e-9);
+        // Now substitution uses max of weights
+        assert!((d - 7.0).abs() < 1e-9);
     }
 
     #[test]
@@ -224,8 +232,8 @@ mod tests {
         let b = to_chars("EMSA group");
         let wa = descending(a.len());
         let wb = descending(b.len());
-        // Mean of the four weights (a[0], a[1], b[0], b[1]) / 4
-        let expected_mean = (wa[0] + wa[1] + wb[0] + wb[1]) / 4.0; // (10+9+10+9)/4 = 9.5
+        // With new rule, adjacent swap cost equals average of max weights at both positions
+        let expected_mean = (wa[0].max(wb[0]) + wa[1].max(wb[1])) / 2.0;
         let d = generic_weighted_damerau_levenshtein(&a, &b, &wa, &wb);
         assert!((d - expected_mean).abs() < 1e-9);
     }

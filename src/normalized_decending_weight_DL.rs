@@ -41,12 +41,19 @@ fn normalized_geometric_descending_weights(n: usize, k: f64) -> Vec<f64> {
 
 /// Wrapper over generic weighted Damerau-Levenshtein that uses normalized
 /// descending geometric weights for both strings, parameterized by `k`.
+///
+/// To keep relative costs comparable across different string lengths, we
+/// normalize using a shared scale based on `max(len(a), len(b))` and then
+/// slice the weights for each string. This avoids making early-character
+/// weights larger solely because one string is longer.
 pub fn normalized_descending_weighted_damerau_levenshtein(a: &str, b: &str, k: f64) -> f64 {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
 
-    let weight_a = normalized_geometric_descending_weights(a_chars.len(), k);
-    let weight_b = normalized_geometric_descending_weights(b_chars.len(), k);
+    let max_len = a_chars.len().max(b_chars.len());
+    let shared_weights = normalized_geometric_descending_weights(max_len, k);
+    let weight_a = shared_weights[0..a_chars.len()].to_vec();
+    let weight_b = shared_weights[0..b_chars.len()].to_vec();
 
     generic_weighted_damerau_levenshtein(&a_chars, &b_chars, &weight_a, &weight_b)
 }
@@ -91,9 +98,21 @@ mod tests {
         let a = "MEFA groups";
         let b = "MEFA group";
         let c = "BEFA groups";
-        let d1 = normalized_descending_weighted_damerau_levenshtein(a, b, 0.6);
-        let d2 = normalized_descending_weighted_damerau_levenshtein(a, c, 0.6);
-        println!("d1: {}, d2: {}", d1, d2);
+        let d1 = normalized_descending_weighted_damerau_levenshtein(a, b, 0.7);
+        let d2 = normalized_descending_weighted_damerau_levenshtein(a, c, 0.7);
+        let d3 = normalized_descending_weighted_damerau_levenshtein(b, c, 0.7);
+        println!("d1: {}, d2: {}, d3: {}", d1, d2, d3);
         assert!(d1 < d2);
+        assert!(d2 < d3);
+    }
+
+    #[test]
+    fn deletion_and_substitution_cost_parity() {
+        // With shared-normalized weights, deleting leading 'a' from "abc" to get "bc"
+        // should cost the same as substituting it to 'z' when comparing to "zbc".
+        let k = 0.8;
+        let d_del = normalized_descending_weighted_damerau_levenshtein("abc", "bc", k);
+        let d_sub = normalized_descending_weighted_damerau_levenshtein("abc", "zbc", k);
+        assert!((d_del - d_sub).abs() < 1e-9);
     }
 }
